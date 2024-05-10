@@ -1,0 +1,105 @@
+version: '3.9'
+
+services:
+  rabbitmq:
+    image: rabbitmq:3.9-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"  # For RabbitMQ management interface
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD", "rabbitmqctl", "ping"]
+      interval: 10s
+      retries: 5
+
+  producer:
+    build:
+      context: ./producer
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+    networks:
+      - app_network
+    ports:
+      - "8080:8080"
+
+  healthcheck:
+    build:
+      context: ./healthcheck
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+    networks:
+      - app_network
+
+  database:
+    build:
+      context: ./database
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+    environment:
+      AMQP_URL: 'amqp://rabbitmq?connection_attempts=10&retry_delay=10'
+    networks:
+      - app_network
+
+  order-processing:
+    build:
+      context: ./order-processing
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+    environment:
+      AMQP_URL: 'amqp://rabbitmq?connection_attempts=10&retry_delay=10'
+    networks:
+      - app_network
+
+  stock-management:
+    build:
+      context: ./stock-management
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+    environment:
+      AMQP_URL: 'amqp://rabbitmq?connection_attempts=10&retry_delay=10'
+    networks:
+      - app_network
+
+  mysql:
+    image: mysql:latest
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+    ports:
+      - "3406:3306"
+    expose:
+      - "3406"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p$password"]
+      interval: 10s
+      retries: 5
+
+networks:
+  app_network:
+    driver: bridge
+
+volumes:
+  mysql_data:
